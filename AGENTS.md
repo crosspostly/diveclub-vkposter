@@ -19,6 +19,7 @@
 - `post.py` — CLI-обёртка: парсит аргументы, читает `.env`, вызывает `vk_poster`; exit code `0` = пост ушёл, `1` = упал
 - `vk_poster.py` — VK API на aiohttp: `post_to_vk_now`, `post_to_vk_scheduled`, фото через `photos.getWallUploadServer` (+`saveWallPhoto`), видео через `video.save`; загрузка ЛЮБЫХ медиа идёт user-токеном (`VK_USER_TOKEN`), `wall.post` — ключом сообщества (`VK_GROUP_TOKEN`)
 - `.env.example` — шаблон переменных (`VK_GROUP_TOKEN`, `VK_GROUP_ID`, опц. `VK_USER_TOKEN`, `VK_API_VERSION`, `DRY_RUN`)
+- `CLIPS.md` — почему клипы ВК нельзя загрузить через API (живой тест) + Playwright-инструкция (cookies, селекторы, каркас)
 - `README.md` — документация, лимиты ВК, граница ответственности с `minapp/`
 
 ## Code style
@@ -36,6 +37,7 @@
 - Медиа-загрузка (и фото, и видео) принимает ТОЛЬКО ПОЛЬЗОВАТЕЛЬСКИЙ токен: `photos.getWallUploadServer` — право `photos` (ключ сообщества → error 27), `video.save` — право `video` (ключ сообщества → error 5). Оба в `VK_USER_TOKEN`
 - Видео: форматы AVI/MP4/3GP/MPEG/MOV/MP3/FLV/WMV; `video.save(group_id=...)` сохраняет видео в сообщество (owner_id отрицательный); после загрузки видео обрабатывается ВК в фоне
 - Ошибки видео: 22 Upload error, 204 Access denied, 214 нет прав на запись, 219 частый рекламный пост, 13000 активные баны сообщества
+- Клипы (Clips): через API НЕ загружаются. `shortVideo.create` → error 3 «Unknown method passed» (все версии API, любой токен); вертикальное видео через `video.save` остаётся обычным видео (type=video, в разделе «Клипы» не появляется). Только через приложение/веб-интерфейс — см. `CLIPS.md`
 
 ## Scope (boundary)
 

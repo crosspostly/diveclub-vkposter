@@ -17,7 +17,7 @@
 ## Project layout
 
 - `post.py` — CLI-обёртка: парсит аргументы, читает `.env`, вызывает `vk_poster`; exit code `0` = пост ушёл, `1` = упал
-- `vk_poster.py` — VK API на aiohttp: `post_to_vk_now`, `post_to_vk_scheduled`, фото через `photos.getWallUploadServer`, видео через `video.save` (нужен `VK_USER_TOKEN`)
+- `vk_poster.py` — VK API на aiohttp: `post_to_vk_now`, `post_to_vk_scheduled`, фото через `photos.getWallUploadServer` (+`saveWallPhoto`), видео через `video.save`; загрузка ЛЮБЫХ медиа идёт user-токеном (`VK_USER_TOKEN`), `wall.post` — ключом сообщества (`VK_GROUP_TOKEN`)
 - `.env.example` — шаблон переменных (`VK_GROUP_TOKEN`, `VK_GROUP_ID`, опц. `VK_USER_TOKEN`, `VK_API_VERSION`, `DRY_RUN`)
 - `README.md` — документация, лимиты ВК, граница ответственности с `minapp/`
 
@@ -33,7 +33,8 @@
 - До 10 медиа на пост (фото + видео вместе; лишние отбрасываются с warning)
 - Минимальный `publish_date` — обычно ~5 минут в будущем; «прошлые» даты ВК может отклонить или опубликовать сразу
 - Длина текста до 16 384 символов (практически до 4000)
-- Видео: форматы AVI/MP4/3GP/MPEG/MOV/MP3/FLV/WMV; `video.save` требует ПОЛЬЗОВАТЕЛЬСКИЙ токен с правом `video` (`VK_USER_TOKEN`) — ключ сообщества видео не грузит; после загрузки видео обрабатывается ВК в фоне
+- Медиа-загрузка (и фото, и видео) принимает ТОЛЬКО ПОЛЬЗОВАТЕЛЬСКИЙ токен: `photos.getWallUploadServer` — право `photos` (ключ сообщества → error 27), `video.save` — право `video` (ключ сообщества → error 5). Оба в `VK_USER_TOKEN`
+- Видео: форматы AVI/MP4/3GP/MPEG/MOV/MP3/FLV/WMV; `video.save(group_id=...)` сохраняет видео в сообщество (owner_id отрицательный); после загрузки видео обрабатывается ВК в фоне
 - Ошибки видео: 22 Upload error, 204 Access denied, 214 нет прав на запись, 219 частый рекламный пост, 13000 активные баны сообщества
 
 ## Scope (boundary)

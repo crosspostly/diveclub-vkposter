@@ -31,13 +31,15 @@ def _token() -> str:
 
 
 def _user_token() -> str:
-    """Token for video.save: VK requires a *user* access token with the
-    'video' scope to upload video. Community keys cannot upload video."""
+    """Token for media uploads: VK requires a *user* access token to upload
+    photos (photos.getWallUploadServer) and videos (video.save) — community
+    keys cannot upload either. Must have the 'photos' and 'video' scopes."""
     tok = os.environ.get("VK_USER_TOKEN", "").strip()
     if not tok:
         raise VKError(
-            "VK_USER_TOKEN is empty: video upload needs a user access token "
-            "with the 'video' scope (community keys cannot upload video)"
+            "VK_USER_TOKEN is empty: uploading photos/videos requires a user "
+            "access token with 'photos' and 'video' scopes (community keys "
+            "cannot upload media). See .env.example."
         )
     return tok
 
@@ -95,13 +97,18 @@ async def _attach_photos(
     session: aiohttp.ClientSession,
     image_paths: list[Path],
 ) -> str:
-    """Upload images and return a comma-separated 'photo<owner>_<id>,...' string."""
+    """Upload images and return a comma-separated 'photo<owner>_<id>,...' string.
+
+    photos.getWallUploadServer / photos.saveWallPhoto accept only a user
+    access token (community keys get error 27), so we use VK_USER_TOKEN.
+    """
     ids: list[str] = []
     for p in image_paths:
         server = await _call(
             session,
             "photos.getWallUploadServer",
             {"group_id": _group_id()},
+            token=_user_token(),
         )
         up = await _upload_photo(session, server["upload_url"], p)
         saved = await _call(
@@ -113,6 +120,7 @@ async def _attach_photos(
                 "server": up["server"],
                 "hash": up["hash"],
             },
+            token=_user_token(),
         )
         photo = saved[0]
         ids.append(f"photo{photo['owner_id']}_{photo['id']}")

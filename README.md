@@ -10,7 +10,7 @@
 vkposter/
 ├── post.py              # CLI: post.py "Текст" --at ISO --photo ...
 ├── vk_poster.py         # VK API: post_to_vk_now + post_to_vk_scheduled
-├── .env.example         # шаблон VK_GROUP_TOKEN, VK_GROUP_ID
+├── .env.example         # шаблон VK_GROUP_TOKEN, VK_GROUP_ID, VK_USER_TOKEN
 ├── requirements.txt     # aiohttp, python-dotenv
 ├── .venv/
 ├── .gitignore
@@ -50,7 +50,8 @@ nano .env          # VK_GROUP_TOKEN, VK_GROUP_ID
 ## Что происходит
 
 1. Скрипт читает `.env`, валидирует `--at` (ISO 8601 с TZ-offset).
-2. Фото грузятся через `photos.getWallUploadServer` → `photos.saveWallPhoto`.
+2. Фото грузятся через `photos.getWallUploadServer` → `photos.saveWallPhoto`
+   (требуют **пользовательский** токен `VK_USER_TOKEN` с правом `photos`).
 3. Видео (если переданы `--video`) грузятся в список видео сообщества:
    `video.save(group_id=...)` (нужен **пользовательский** токен `VK_USER_TOKEN`
    с правом `video`) → POST файла в `video_file` на `upload_url`. После
@@ -62,15 +63,18 @@ nano .env          # VK_GROUP_TOKEN, VK_GROUP_ID
 6. Логи в stdout: `OK: post_id=...` или `FAILED: ...`.
 7. Exit code: `0` если пост ушёл, `1` если упал.
 
-## Видео от имени сообщества
+## Медиа от имени сообщества (фото и видео)
 
-- **Токен**: ключ сообщества (`VK_GROUP_TOKEN`) **не умеет** загружать видео —
-  VK принимает для `video.save` только пользовательский токен с правом `video`.
-  Положите его в `VK_USER_TOKEN` (см. `.env.example`): Standalone-приложение →
-  Настройки → ключ с правом `video` (+ `offline`), пользователь должен быть
-  администратором сообщества. Пользователь, которому принадлежит токен,
-  **не** будет указан в посте — пост публикуется от имени сообщества.
-- **Форматы**: AVI, MP4, 3GP, MPEG, MOV, MP3, FLV, WMV (по докам ВК).
+- **Токен**: ключ сообщества (`VK_GROUP_TOKEN`) **не умеет** загружать медиа —
+  VK принимает для `photos.getWallUploadServer` и `video.save` только
+  **пользовательский** токен (подтверждено живыми тестами: ключ сообщества
+  получает ошибки 27 «method is unavailable with group auth» для фото и
+  5 «User authorization failed» для видео). Положите его в `VK_USER_TOKEN`
+  (см. `.env.example`): Standalone-приложение → Настройки → ключ с правами
+  `photos` + `video` (+ `offline`), пользователь должен быть администратором
+  сообщества. Пользователь, которому принадлежит токен, **не** будет указан
+  в посте — пост публикуется от имени сообщества.
+- **Форматы видео**: AVI, MP4, 3GP, MPEG, MOV, MP3, FLV, WMV (по докам ВК).
 - **Название** видео в ВК = имя файла (без расширения), до 128 символов.
 - **Обработка**: после загрузки видео конвертируется ВК в фоне. Для отложенного
   поста закладывайте время на обработку, чтобы видео успело появиться к

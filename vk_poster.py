@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 API = "https://api.vk.com/method"
 
-# Video files can be big (up to ~1 GB); give the upload request a long timeout.
+# Video files can be big (VK accepts up to ~2 GB); give the upload request a long timeout.
 VIDEO_UPLOAD_TIMEOUT = 3600  # seconds
 
 

@@ -19,8 +19,9 @@
 - `post.py` — CLI-обёртка: парсит аргументы, читает `.env`, вызывает `vk_poster`; exit code `0` = пост ушёл, `1` = упал
 - `vk_poster.py` — VK API на aiohttp: `post_to_vk_now`, `post_to_vk_scheduled`, фото через `photos.getWallUploadServer` (+`saveWallPhoto`), видео через `video.save`; загрузка ЛЮБЫХ медиа идёт user-токеном (`VK_USER_TOKEN`), `wall.post` — ключом сообщества (`VK_GROUP_TOKEN`)
 - `.env.example` — шаблон переменных (`VK_GROUP_TOKEN`, `VK_GROUP_ID`, опц. `VK_USER_TOKEN`, `VK_API_VERSION`, `DRY_RUN`)
-- `CLIPS.md` — клипы ВК: `shortVideo.create` в сообщество (нужен токен vk.com), наблюдения живых тестов, Playwright-фолбэк
-- `clip_upload.py` — загрузка клипа в сообщество через `shortVideo.create` (нужен `VK_CLIP_TOKEN`)
+- `CLIPS.md` — клипы ВК: `shortVideo.create` в сообщество, рабочий web-токен-механизм, наблюдения живых тестов, Playwright-фолбэк
+- `clip_upload.py` — загрузка клипа в сообщество через `shortVideo.create` (нужен `VK_CLIP_TOKEN`, vkhost «vk.com»)
+- `clip_web_upload.py` — ✅ РАБОЧИЙ путь клипов в сообщество: web-токен из кук сессии vk.ru + `shortVideo.create` (без `VK_CLIP_TOKEN`); куки — как в `--cookies` (JSON), права редактора/админа группы
 - `README.md` — документация, лимиты ВК, граница ответственности с `minapp/`
 
 ## Code style
@@ -38,7 +39,7 @@
 - Медиа-загрузка (и фото, и видео) принимает ТОЛЬКО ПОЛЬЗОВАТЕЛЬСКИЙ токен: `photos.getWallUploadServer` — право `photos` (ключ сообщества → error 27), `video.save` — право `video` (ключ сообщества → error 5). Оба в `VK_USER_TOKEN`
 - Видео: форматы AVI/MP4/3GP/MPEG/MOV/MP3/FLV/WMV; `video.save(group_id=...)` сохраняет видео в сообщество (owner_id отрицательный); после загрузки видео обрабатывается ВК в фоне
 - Ошибки видео: 22 Upload error, 204 Access denied, 214 нет прав на запись, 219 частый рекламный пост, 13000 активные баны сообщества
-- Клипы (Clips) в СООБЩЕСТВО: `shortVideo.create` (закрытый метод) — работает ТОЛЬКО с user-токеном официального приложения (`VK_CLIP_TOKEN`, vkhost «vk.com»); с VFeed-токеном и ключом сообщества → error 3 «Unknown method passed» (все версии API). `video.save` + `wall.post` клип в сообществе НЕ создаёт (проверено: 9:16 720×1280, 3:4 720×960, 9:16 1080×1920 — всё `type=video`, раздел «Клипы» пуст). Исключение: на ЛИЧНУЮ страницу пользователя вертикаль (в т.ч. 3:4) через `video.save` (без `group_id`) + `wall.post` становится клипом (attachment `type: short_video`). Клипы в сообществе существуют — см. группу 92478300. Скрипт: `clip_upload.py`; детали в `CLIPS.md`
+- Клипы (Clips) в СООБЩЕСТВО: `shortVideo.create` (закрытый метод) — работает ТОЛЬКО с токеном официального приложения. Два способа: (1) ✅ **web-токен из кук сессии** — каждая SPA-страница vk.ru с Cookie содержит `"webToken":{"access_token":"..."}` (официальный web-токен, короткоживущий, брать перед вызовом); нужны права РЕДАКТОРА/АДМИНА группы, иначе error 15 «Access denied» (метод существует!). Проверено живьём 2026-08-16: клипы 456239214/456239215 (30с/12с) в группе 96798355 — `type: short_video`, `owner_id: -96798355`, `is_united_video: 1`, `repeat: 1`. (2) `VK_CLIP_TOKEN` от vkhost «vk.com» (живой тест не проводился). VFeed-токен и ключ сообщества → error 3 «Unknown method passed» (все версии API). `video.save` + `wall.post` клип в сообществе НЕ создаёт (проверено: 9:16 720×1280, 3:4 720×960, 9:16 1080×1920 — всё `type=video`, раздел «Клипы» пуст). Исключение: на ЛИЧНУЮ страницу пользователя вертикаль (в т.ч. 3:4) через `video.save` (без `group_id`) + `wall.post` становится клипом (attachment `type: short_video`). Загрузка файла: POST на `upload_url`, multipart-поле `file`, UA `vk-test-clip-upload 1`; ответ — `<retval>1</retval>` ИЛИ JSON `{video_hash, size, owner_id, video_id}`. Клипы НЕ видны в `video.get` (видеотека — только `type: video`) и НЕ попадают на стену (ни `wallpost=1`, ни `wall.post` с вложением — отбрасывается). Клипы в сообществе существуют — см. группу 92478300. Скрипты: `clip_web_upload.py` (куки, рабочий), `clip_upload.py` (VK_CLIP_TOKEN); детали в `CLIPS.md`
 
 ## Scope (boundary)
 

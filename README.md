@@ -12,9 +12,11 @@
 ```
 ├── post.py              # CLI: post.py "Текст" --at ISO --photo ... --video ...
 ├── vk_poster.py         # VK API: post_to_vk_now + post_to_vk_scheduled
+├── clip_upload.py       # клип в сообщество: shortVideo.create + токен vk.com (VK_CLIP_TOKEN)
+├── clip_web_upload.py   # клип в сообщество: web-токен из кук сессии (без VK_CLIP_TOKEN) ✅
 ├── .env.example         # шаблон VK_GROUP_TOKEN, VK_GROUP_ID, VK_USER_TOKEN
 ├── requirements.txt     # aiohttp, python-dotenv
-├── CLIPS.md             # клипы ВК: почему нельзя через API + Playwright-инструкция
+├── CLIPS.md             # клипы ВК: shortVideo.create, web-токен, Playwright-фолбэк
 ├── SETUP.md             # пошаговая установка и получение токенов (для новичков)
 ├── AGENTS.md            # инструкции для AI-агентов / разработчиков
 ├── .gitignore           # .env и .venv не коммитятся
@@ -104,9 +106,16 @@ Windows: `.venv\Scripts\python post.py ...` (вместо `.venv/bin/python`).
 ## VK Клипы (Clips)
 
 Клипы **в сообщество** загружаются закрытым методом **`shortVideo.create`** —
-но **только токеном официального приложения ВК** (vkhost → кнопка «vk.com»,
-переменная `VK_CLIP_TOKEN`). Обычные токены (VFeed и т.п.) и ключ сообщества
-дают error 3 «Unknown method passed».
+он принимает только токены официального приложения ВК. Рабочих способа два:
+
+1. **Web-токен из кук сессии (✅ проверено живыми тестами)** — куки браузера →
+   `GET vk.ru` → в SPA-странице лежит `window.vk.webToken.access_token`
+   (официальный web-токен). Нужны права **редактора/админа** на группу,
+   иначе error 15. Скрипт: **`clip_web_upload.py`**.
+2. **VK_CLIP_TOKEN** (vkhost → кнопка «vk.com») — скрипт: `clip_upload.py`.
+
+Обычные токены (VFeed и т.п.) и ключ сообщества дают error 3
+«Unknown method passed».
 
 - Обычный флоу `video.save` + `wall.post` клип в сообществе **не создаёт** —
   проверено для 9:16, 3:4 и 9:16 Full HD (1080×1920): вложение `type: video`,
@@ -114,12 +123,13 @@ Windows: `.venv\Scripts\python post.py ...` (вместо `.venv/bin/python`).
 - **Исключение — личная страница пользователя**: там вертикальное видео
   (в т.ч. 3:4) через `video.save` (без `group_id`) + `wall.post`
   становится клипом (вложение `type: short_video`).
-- Живой пример клипов в сообществе, загруженных скриптами: группа
-  `92478300` (170 роликов 9:16 1080×1920, часть — `type: short_video`).
+- **Клипы не попадают на стену**: ни `wallpost=1`, ни `wall.post` с
+  вложением клипа (ВК отбрасывает вложение); в видеотеке (`video.get`)
+  клипы тоже не показываются — живут только в разделе «Клипы».
+- Живой пример клипов в сообществе: группа `92478300` (170 роликов 9:16,
+  часть — `type: short_video`); рабочие тестовые клипы — `vk.ru/clip-96798355_456239215`.
 
-Скрипт загрузки клипа в сообщество — **[`clip_upload.py`](clip_upload.py)**
-(нужен `VK_CLIP_TOKEN`). Подробности, наблюдения и Playwright-фолбэк —
-в **[CLIPS.md](CLIPS.md)**.
+Подробности, наблюдения и Playwright-фолбэк — в **[CLIPS.md](CLIPS.md)**.
 
 ## Где взять токены ВК
 

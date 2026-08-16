@@ -14,6 +14,21 @@ Mechanism (found and PROVEN live 2026-08-16):
   group video list (video.get) and does NOT appear on the wall (wallpost=1
   and wall.post with the clip attachment are silently dropped by VK).
 
+PUBLISH STEP (open problem, discovered 2026-08-16):
+- shortVideo.create + upload alone creates the clip OBJECT (type: short_video,
+  owner_id negative) but it does NOT appear in the group's КЛИПЫ section
+  (shortVideo.getOwnerVideos count=0) — the section stays empty.
+- The missing step is shortVideo.publish, but it is NOT yet solved:
+  every call returns error 100 "license_agreement must by true" regardless of
+  params/serialization (license_agreement = 1 / "true" / True / 0 / absent,
+  in query or body) and of API version (5.92/5.126/5.131/5.160/5.199/5.285,
+  api.vk.com and api.vk.ru with client_id=6287487).
+- The real web UI flow is: getGroupsForUploading -> create(file_size, group_id)
+  -> POST upload_url -> poll encodeProgress until is_ready -> "Публикация
+  клипа" page -> click "Опубликовать" (button[data-testid="clips-publish-button"]).
+  Capturing that real publish request (exact license_agreement format) is the
+  open task; see CLIPS.md "Актуальный статус".
+
 Usage:
     python clip_web_upload.py --cookies vk_cookies.json --video clip.mp4 \
         --text "описание" [--group 96798355] [--wallpost 1]

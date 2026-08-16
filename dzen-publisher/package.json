@@ -1,0 +1,16 @@
+{
+  "name": "dzen-publisher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Публикация в Яндекс Дзен через Playwright: статьи (заголовок/текст/картинка) и видео (локальный файл → модалка). Куки-сессия, без логина. См. README.md.",
+  "type": "commonjs",
+  "scripts": {
+    "article": "node publish-dzen.js",
+    "video": "node publish-dzen-video.js",
+    "probe": "node probe-editor.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "playwright": "^1.57.0"
+  }
+}

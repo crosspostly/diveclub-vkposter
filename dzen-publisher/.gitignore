@@ -1,0 +1,11 @@
+# Секреты и личные данные — НЕ коммитить
+.env
+config/cookies.json
+history/
+
+# Зависимости
+node_modules/
+
+# Отладочные дампы скриптов (step*.html/png, v*.html/png, 00-*.png и т.д.)
+*.png
+*.html

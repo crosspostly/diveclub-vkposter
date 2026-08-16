@@ -102,11 +102,12 @@ multipart-поле **`file`**, user-agent **`vk-test-clip-upload 1`**.
 
 Если токена vk.com нет — фолбэк: загрузка через веб-интерфейс (Playwright, ниже).
 
-## ⚠️ Актуальный статус (2026-08-16, после UI-диагностики)
+## ✅ Актуальный статус (2026-08-16, publish РАЗГАДАН)
 
-**Коротко: объект клипа через `shortVideo.create` создаётся и загружается,
-НО появление в разделе «Клипы» (`shortVideo.getOwnerVideos`) пока НЕ
-доказано.** Ниже — полная правда по результатам живых экспериментов.
+**Коротко: полный путь клипа в раздел «Клипы» сообщества НАЙДЕН и доказан
+живой публикацией.** 4 клипа группы 96798355 (456239214/215/217/220) реально
+появились в разделе (`shortVideo.getOwnerVideos` count=4, все
+`type: short_video`).
 
 ### Реальный веб-флоу (перехвачен в UI, v=5.285, api.vk.ru)
 
@@ -120,38 +121,54 @@ multipart-поле **`file`**, user-agent **`vk-test-clip-upload 1`**.
 3. `POST` на `upload_url` (multipart `file`) → `{video_hash, size, owner_id, video_id}`.
 4. Поллинг `shortVideo.encodeProgress` (`video_id&owner_id&hash`) до
    `percents: 100, is_ready: true` — ВК перекодирует в фоне.
-5. UI показывает страницу «Публикация клипа»: «Клип загружен и обработан»,
-   поле «Описание», обложка (3 кадра), кнопка «Опубликовать»
-   (`button[data-testid="clips-publish-button"]`, может быть ниже скролла).
+5. **`shortVideo.edit`** — точные параметры из UI:
+   `video_id&owner_id&description&privacy_view=all&can_make_duet=1&
+   privacy_comment=all&audio_raw_id=&attach_to_video_raw_id=&
+   ord_info={"is_ads":false,"advertisers":[]}&thumb_id=united:0_<owner>`.
+6. **`shortVideo.publish`** — ГЛАВНЫЙ вызов (перехвачен при клике «Опубликовать»):
+   ```
+   POST api.vk.ru/method/shortVideo.publish?v=5.285&client_id=6287487
+   video_id=<id>&owner_id=-96798355&wallpost=1&publish_date=0
+   &license_agree=1&ref=link
+   ```
+   → 200 `{"response":{"video":{...}}}` = клип в разделе.
 
-### `shortVideo.publish` — пока НЕ работает (error 100)
+### 🎯 Разгадка error 100: параметр называется `license_agree`
 
-Попытка вызвать `shortVideo.publish` напрямую (webToken, api.vk.ru/vk.com,
-v=5.131–5.285, с/без client_id, с hash, `license_agreement` = 1/"true"/True/0/
-отсутствует, в query/body) → **всегда error 100
-«One of the parameters specified was missing or invalid: 4: license_agreement
-must by true»**. Точный формат параметра неизвестен; правильный запрос виден
-только при реальном клике «Опубликовать» в UI (см. раздел Playwright ниже).
+Все 30+ вариантов (`license_agreement` = 1/"true"/True/0/отсутствует, в query/
+body, v=5.92–5.285, api.vk.com и api.vk.ru) падали с error 100
+«license_agreement must by true». Настоящий параметр — **`license_agree=1`**
+(без «ment»!). Прямой API-вызов с ним работает **без браузера** (проверено:
+456239214/215/217/220 опубликованы напрямую, `getOwnerVideos` count=4).
+
+### Две кнопки «Опубликовать» (оба селектора)
+
+| testid | Где | Что делает |
+|---|---|---|
+| `clips-publish-button` | страница `/clips/upload-<gid>` | **открывает модалку «Новый клип»** + `getGroupsForUploading` |
+| `clips-uploadForm-publish-button` | страница «Публикация клипа» (после is_ready) | **реально публикует** клип (ниже скролла!) |
+
+Кнопка публикации на форме может быть **ниже скролла** — селекторы по
+`.vkuiModalPage` её не видят (это не модалка, а полноценная страница).
+v4 нажал её через `button:has-text('Опубликовать')` после
+`scroll_into_view_if_needed` — и перехватил настоящий publish-запрос.
 
 ### ВАЖНО про видимость
 
 - Клипы НЕ показываются в `video.get` (видеотека — только `type: video`),
   но `video.get` по прямому id (`videos=-<gid>_<vid>`) отдаёт клип
-  (`type: short_video`, пустой title, `repeat: 1`, `is_united_video: 1`).
+  (`type: short_video`, `repeat: 1`, `is_united_video: 1`).
 - Клипы НЕ попадают на стену (ни `wallpost=1`, ни `wall.post` с вложением).
 - Эталон: группа 92478300 — 170 роликов 9:16, часть `type: short_video`
-  (456239326/323/322/321) — они в разделе «Клипы» есть, т.е. механизм
-  существует; как именно они туда попали — исходно неизвестно (старый
-  клиент/флоу).
+  (456239326/323/322/321) — они в разделе «Клипы» есть.
 
 ### Скрипты
 
-- **`clip_web_upload.py`** — `shortVideo.create` + web-токен из кук.
-  Создаёт объект клипа (owner_id отрицательный), но раздел «Клипы»
-  (`getOwnerVideos`) он не наполняет — нужен финальный publish-шаг
-  (см. раздел Playwright). **Не считать «доказанным путём в раздел».**
+- **`clip_web_upload.py`** — ПОЛНЫЙ рабочий цикл: `create` → upload → поллинг
+  `encodeProgress` → `edit` → `publish(license_agree=1)` → verify
+  `getOwnerVideos` > 0. ✅ Проверено живьём (2026-08-16).
 - `clip_upload.py` (VK_CLIP_TOKEN от vkhost «vk.com») — живой тест не
-  проводился.
+  проводился; механизм тот же + тот же publish-шаг.
 
 ## Фолбэк: автоматизация загрузки клипов через Playwright
 
@@ -251,11 +268,19 @@ playwright codegen https://vk.com/clips-96798355
 5. UI переходит на страницу «Публикация клипа»: «Клип загружен и обработан»,
    поле «Описание» (`placeholder "О чём ваш клип?"`), обложка (3 кадра),
    переключатели «Разрешить комментарии/дуэты». Кнопка «Опубликовать» —
-   `button[data-testid="clips-publish-button"]`, может быть **ниже скролла**.
+   `button[data-testid="clips-uploadForm-publish-button"]`, может быть
+   **ниже скролла** (v3 не нашёл её селекторами `.vkuiModalPage` — это
+   страница, а не модалка).
 6. **Дождаться `is_ready=true` и ТОЛЬКО ПОТОМ кликать «Опубликовать»** —
-   в v2/v3 клик до готовности не дал publish-запроса (модалка закрылась).
-   Публикация-запрос при этом пока не перехвачен — это открытый вопрос
-   (см. «Актуальный статус» выше).
+   клик до готовности ничего не даёт. Кликнуть `scroll_into_view_if_needed()`
+   по `clips-uploadForm-publish-button` (или `button:has-text('Опубликовать')`
+   — так сделал v4 и перехватил настоящий запрос):
+   сначала `shortVideo.edit` (description/privacy/duet/thumb), затем
+   **`shortVideo.publish` с `license_agree=1`** → клип в разделе
+   (`getOwnerVideos` count>0, проверено живьём 2026-08-16).
+
+   ⚠️ Не путать: `clips-publish-button` (та же страница до выбора файла) —
+   это кнопка ОТКРЫТИЯ модалки «Новый клип», а не публикации.
 
 Перехват webToken: слушать `response` на `login.vk.ru/?act=web_token`,
 токен лежит в JSON-теле (`data.access_token`). Он **короткоживущий** —
@@ -286,17 +311,16 @@ playwright codegen https://vk.com/clips-96798355
   (`video.save` без `group_id` + `wall.post`), бубен не нужен.
 - **✅ В сообщество горизонталь → обычное видео через API**
   (`video.save(group_id)` + `wall.post`).
-- **⚠️ В сообщество вертикаль (клип)**: `shortVideo.create` + web-токен из
-  кук — объект клипа создаётся и загружается (456239214/215/217/218/219,
-  `type: short_video`), но **появления в разделе «Клипы»
-  (`shortVideo.getOwnerVideos` = 0) пока не достигнуто** — финальный шаг
-  `shortVideo.publish` упирается в error 100 «license_agreement must by true»;
-  правильный формат пока не найден (перехват UI-клика «Опубликовать» —
-  открытая задача, см. «Актуальный статус»).
+- **✅ В сообщество вертикаль (клип) — ПОЛНЫЙ РАБОЧИЙ ПУТЬ** (2026-08-16):
+  `shortVideo.create` + web-токен из кук → upload → поллинг `encodeProgress`
+  → `shortVideo.edit` → **`shortVideo.publish` с `license_agree=1`** →
+  клип в разделе «Клипы» (`getOwnerVideos` count=4: 456239214/215/217/220,
+  все `type: short_video`). Параметр — `license_agree` (не
+  `license_agreement`!); работает и напрямую по API, и через UI-кнопку
+  `clips-uploadForm-publish-button`.
 - `clip_upload.py` (VK_CLIP_TOKEN от vkhost «vk.com») — живой тест всё ещё
-  не проведён (такого токена нет); механизм тот же `shortVideo.create`.
+  не проведён (такого токена нет); механизм тот же + тот же publish-шаг.
 - Клипы НЕ показываются в видеотеке (`video.get`) и НЕ попадают на стену
   (ни `wallpost=1`, ни `wall.post` с вложением).
-- Playwright-инструкция — **фолбэк**: проверенные на живом аккаунте шаги
-  (v1–v3) описаны выше; финальный клик «Опубликовать» после `is_ready` —
-  открытый вопрос.
+- Playwright-инструкция — **фолбэк**; API-путь (`clip_web_upload.py`) теперь
+  сам делает полный цикл включая publish.

@@ -132,16 +132,18 @@ Windows: `.venv\Scripts\python post.py ...` (вместо `.venv/bin/python`).
 - **Исключение — личная страница пользователя**: там вертикальное видео
   (в т.ч. 3:4) через `video.save` (без `group_id`) + `wall.post`
   становится клипом (вложение `type: short_video`).
+- **✅ Клип в раздел «Клипы» сообщества — полный рабочий путь** (2026-08-16):
+  `shortVideo.create` + web-токен из кук → upload → поллинг
+  `encodeProgress` до `is_ready` → `shortVideo.edit` → **`shortVideo.publish`
+  с `license_agree=1`** (главный секрет: параметр `license_agree`, а НЕ
+  `license_agreement` — он и давал error 100). Скрипт `clip_web_upload.py`
+  делает весь цикл сам; проверено живьём: 4 клипа группы 96798355
+  (456239214/215/217/220) в разделе (`getOwnerVideos` count=4).
 - **Клипы не попадают на стену**: ни `wallpost=1`, ни `wall.post` с
   вложением клипа (ВК отбрасывает вложение); в видеотеке (`video.get`)
   клипы тоже не показываются — живут только в разделе «Клипы».
-- **⚠️ `shortVideo.create` создаёт объект клипа, но появление в разделе
-  «Клипы» (`getOwnerVideos`) пока не достигнуто**: финальный
-  `shortVideo.publish` упирается в error 100 «license_agreement must by true»,
-  правильный формат ищется (перехват UI-клика «Опубликовать»). Скрипт
-  `clip_web_upload.py` объект создаёт, раздел не наполняет.
 - Живой пример клипов в сообществе: группа `92478300` (170 роликов 9:16,
-  часть — `type: short_video`); тестовые объекты — `vk.ru/clip-96798355_456239215`.
+  часть — `type: short_video`); тестовые клипы — `vk.ru/clips-96798355`.
 
 Подробности, наблюдения и Playwright-фолбэк — в **[CLIPS.md](CLIPS.md)**.
 

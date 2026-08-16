@@ -1,33 +1,39 @@
-"""Upload a CLIP to a VK community using the web-session token.
+"""Upload a CLIP to a VK community using the web-session token (FULL flow, proven).
 
-Mechanism (found and PROVEN live 2026-08-16):
-- The vk.ru SPA embeds window.vk.webToken.access_token in every page served to
-  a logged-in session. It is an OFFICIAL web-app token -> shortVideo.create is
-  a real method for it (error 3 only appears for VFeed/community tokens).
+Mechanism (found and PROVEN live 2026-08-16, group 96798355, 4 clips in section):
+- The vk.ru SPA fetches an OFFICIAL web-app token from
+  POST login.vk.ru/?act=web_token (version=1&app_id=6287487&access_token=...)
+  on every logged-in page load. For this token shortVideo.* are real methods
+  (error 3 only for VFeed/community tokens). It is short-lived (~5-10 min,
+  then error 5) — obtain it right before the calls.
 - The token user MUST be an editor/admin of the target group (else error 15).
-- shortVideo.create(group_id, wallpost=1, description, file_size) -> upload_url
-  -> POST multipart field 'file', UA 'vk-test-clip-upload 1'
-  -> HTTP 200 + <retval>1</retval> (old) OR JSON {video_hash,size,owner_id,
-  video_id} (new) = clip created.
-- The clip lands in the group's КЛИПЫ section as type=short_video object
-  (owner_id negative, is_united_video=1, repeat=1). It does NOT show in the
-  group video list (video.get) and does NOT appear on the wall (wallpost=1
-  and wall.post with the clip attachment are silently dropped by VK).
 
-PUBLISH STEP (open problem, discovered 2026-08-16):
-- shortVideo.create + upload alone creates the clip OBJECT (type: short_video,
-  owner_id negative) but it does NOT appear in the group's КЛИПЫ section
-  (shortVideo.getOwnerVideos count=0) — the section stays empty.
-- The missing step is shortVideo.publish, but it is NOT yet solved:
-  every call returns error 100 "license_agreement must by true" regardless of
-  params/serialization (license_agreement = 1 / "true" / True / 0 / absent,
-  in query or body) and of API version (5.92/5.126/5.131/5.160/5.199/5.285,
-  api.vk.com and api.vk.ru with client_id=6287487).
-- The real web UI flow is: getGroupsForUploading -> create(file_size, group_id)
-  -> POST upload_url -> poll encodeProgress until is_ready -> "Публикация
-  клипа" page -> click "Опубликовать" (button[data-testid="clips-publish-button"]).
-  Capturing that real publish request (exact license_agreement format) is the
-  open task; see CLIPS.md "Актуальный статус".
+Full proven flow (all api.vk.ru/method/*, v=5.285, client_id=6287487):
+  1. shortVideo.getGroupsForUploading        -> list of groups (admin_level)
+  2. shortVideo.create(file_size, group_id)  -> {owner_id, video_id, upload_url}
+  3. POST upload_url (ovu.mycdn.me, multipart field 'file', UA 'vk-test-clip-upload 1')
+     -> JSON {video_hash, size, owner_id, video_id}
+  4. poll shortVideo.encodeProgress(video_id, owner_id, hash) until is_ready=true
+  5. shortVideo.edit(video_id, owner_id, description, privacy_view=all,
+     can_make_duet=1, privacy_comment=all, thumb_id=united:0_<owner>, ...)
+  6. shortVideo.publish(video_id, owner_id, wallpost=1, publish_date=0,
+     license_agree=1, ref=link)
+     -> 200 {response:{video:...}} = clip IS in the group's КЛИПЫ section
+     (shortVideo.getOwnerVideos count>0)
+
+KEY: the magic param is license_agree=1 (NOT license_agreement!). Every
+variant with license_agreement returns error 100 "license_agreement must by
+true"; license_agree=1 works and is what the real UI sends (captured from the
+actual "Опубликовать" click, v4).
+
+Two different buttons in the UI (both data-testid, see CLIPS.md):
+  - clips-publish-button          -> upload page, OPENS the "Новый клип" modal
+  - clips-uploadForm-publish-button -> publish-form page (after is_ready),
+    actually PUBLISHES the clip (below the scroll on the form)
+
+Clips do NOT show in video.get (library is type: video only), do NOT appear
+on the wall (wallpost=1 and wall.post with clip attachment are dropped by VK),
+live only in the group's КЛИПЫ section.
 
 Usage:
     python clip_web_upload.py --cookies vk_cookies.json --video clip.mp4 \
@@ -132,22 +138,82 @@ async def upload_clip(cookies_path: Path, video_path: Path, text: str,
             return 1
         print(f"OK: клип загружен -> https://vk.ru/clip{owner_id}_{video_id}")
 
-        print("waiting 35s for VK processing...")
-        await asyncio.sleep(35)
+        # Poll encodeProgress until VK finishes processing (needs video_hash)
+        video_hash = None
+        try:
+            j = json.loads(body)
+            video_hash = j.get("video_hash")
+        except Exception:
+            video_hash = None
+        if not video_hash:
+            print("WARN: video_hash не получен из ответа загрузки — пропускаю поллинг")
+        else:
+            for i in range(120):
+                r = await call(session, "shortVideo.encodeProgress", token, {
+                    "video_id": video_id, "owner_id": owner_id, "hash": video_hash,
+                })
+                resp = r.get("response")
+                if resp is None:
+                    print(f"encodeProgress error: {json.dumps(r, ensure_ascii=False)[:200]}")
+                    break
+                is_ready = resp.get("is_ready", False)
+                if i % 4 == 0 or is_ready:
+                    print(f"encodeProgress: {resp.get('percents')}% is_ready={is_ready}")
+                if is_ready:
+                    break
+                await asyncio.sleep(3)
+            else:
+                print("WARN: encodeProgress не дождался is_ready за 6 минут")
 
-        r = await call(session, "video.get", token, {"videos": f"{owner_id}_{video_id}"})
-        item = r.get("response", {}).get("items", [])
-        print("video.get:", json.dumps(r, ensure_ascii=False)[:800])
-        if item:
-            print("TYPE:", item[0].get("type"), "| title:", item[0].get("title"))
+        # shortVideo.edit — exact params from the real UI (v4 capture)
+        r = await call(session, "shortVideo.edit", token, {
+            "video_id": video_id,
+            "owner_id": owner_id,
+            "description": text,
+            "privacy_view": "all",
+            "can_make_duet": "1",
+            "privacy_comment": "all",
+            "audio_raw_id": "",
+            "attach_to_video_raw_id": "",
+            "ord_info": '{"is_ads":false,"advertisers":[]}',
+            "thumb_id": f"united:0_{owner_id}",
+        })
+        if "error" in r:
+            print(f"WARN: shortVideo.edit error {r['error'].get('error_code')}: "
+                  f"{r['error'].get('error_msg')}")
+        else:
+            print("OK: shortVideo.edit принят")
 
-        r = await call(session, "wall.get", token, {"owner_id": -int(group_id), "count": 1})
-        items = r.get("response", {}).get("items", [])
-        if items:
-            for a in items[0].get("attachments", []):
-                print("wall attachment type:", a.get("type"))
-        print("Проверь сам: https://vk.ru/clips-96798355")
-        return 0
+        # shortVideo.publish — THE magic call (license_agree=1, not license_agreement!)
+        r = await call(session, "shortVideo.publish", token, {
+            "video_id": video_id,
+            "owner_id": owner_id,
+            "wallpost": wallpost,
+            "publish_date": "0",
+            "license_agree": "1",
+            "ref": "link",
+        })
+        if "error" in r:
+            err = r["error"]
+            print(f"FAILED: shortVideo.publish error {err.get('error_code')}: "
+                  f"{err.get('error_msg')}")
+            return 1
+        print("OK: shortVideo.publish принят (200)")
+
+        # Verify: clip must be in the group's КЛИПЫ section
+        await asyncio.sleep(2)
+        r = await call(session, "shortVideo.getOwnerVideos", token,
+                       {"owner_id": f"-{group_id}", "count": "10"})
+        resp = r.get("response", {})
+        count = resp.get("count", 0)
+        print(f"VERIFY: shortVideo.getOwnerVideos count={count}")
+        for it in (resp.get("items") or [])[:10]:
+            print("  clip:", {k: it.get(k) for k in ("id", "owner_id", "title", "type") if k in it})
+        if count > 0:
+            print(f"OK: клип в разделе «Клипы» https://vk.ru/clips-{group_id}")
+            return 0
+        print("WARN: getOwnerVideos = 0 — клип в разделе не появился")
+        return 1
 
 
 def main() -> int:
